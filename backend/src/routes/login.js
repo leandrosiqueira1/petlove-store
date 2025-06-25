@@ -2,14 +2,16 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
+require('dotenv').config();
 
-require('dotenv').config(); 
+const { validarLogin } = require('../middleware/validacoes');
+const tratarErros = require('../middleware/tratarErros');
 
 const router = express.Router();
 const secret = process.env.JWT_SECRET;
 
 // Login
-router.post('/', async (req, res) => {
+router.post('/', validarLogin, tratarErros, async (req, res) => {
   const { email, senha } = req.body;
 
   try {

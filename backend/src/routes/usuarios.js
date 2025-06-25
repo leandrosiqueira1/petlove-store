@@ -4,14 +4,12 @@ const pool = require('../config/db');
 require('dotenv').config();
 
 const router = express.Router();
+const { validarUsuario } = require('../middleware/validacoes');
+const tratarErros = require('../middleware/tratarErros');
 
 // Rota para cadastrar usuário
-router.post('/', async (req, res) => {
+router.post('/', validarUsuario, tratarErros, async (req, res) => {
   const { nome, email, senha } = req.body;
-
-  if (!nome || !email || !senha) {
-    return res.status(400).json({ erro: 'Nome, email e senha são obrigatórios.' });
-  }
 
   try {
     // Verifica se o e-mail já existe

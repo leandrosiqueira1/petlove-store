@@ -1,11 +1,13 @@
 const express = require('express');
 const pool = require('../config/db');
 const autenticar = require('../middleware/auth');
+const { validarAdicionarCarrinho, validarAtualizarCarrinho } = require('../middleware/validacoes'); // Importe as validações
+const tratarErros = require('../middleware/tratarErros'); // Importe o middleware de tratamento de erros
 
 const router = express.Router();
 
 // Adicionar ou atualizar item no carrinho
-router.post('/adicionar', autenticar, async (req, res) => {
+router.post('/adicionar', autenticar, validarAdicionarCarrinho, tratarErros, async (req, res) => {
   const { produto_id, quantidade } = req.body;
   const userId = req.userId;
 
@@ -23,12 +25,20 @@ router.post('/adicionar', autenticar, async (req, res) => {
 
     if (itemExistente.rows.length > 0) {
       // Atualiza a quantidade se o item já estiver no carrinho
+      // Verifica se a quantidade a ser adicionada resulta em um estoque negativo
+      if (produto.rows[0].estoque !== null && (itemExistente.rows[0].quantidade + quantidade) > produto.rows[0].estoque) {
+        return res.status(400).json({ erro: 'Quantidade excede o estoque disponível.' });
+      }
       await pool.query(
         'UPDATE carrinho SET quantidade = quantidade + $1 WHERE produto_id = $2 AND usuario_id = $3',
         [quantidade, produto_id, userId]
       );
     } else {
       // Adiciona novo item
+      // Verifica se a quantidade inicial excede o estoque
+      if (produto.rows[0].estoque !== null && quantidade > produto.rows[0].estoque) {
+        return res.status(400).json({ erro: 'Quantidade excede o estoque disponível.' });
+      }
       await pool.query(
         'INSERT INTO carrinho (produto_id, quantidade, usuario_id) VALUES ($1, $2, $3)',
         [produto_id, quantidade, userId]
@@ -48,7 +58,7 @@ router.get('/', autenticar, async (req, res) => {
 
   try {
     const resultado = await pool.query(`
-      SELECT c.id, p.nome, p.preco, c.quantidade, (p.preco * c.quantidade) AS total
+      SELECT c.id, p.nome, p.preco, p.imagem_url, c.quantidade, (p.preco * c.quantidade) AS total, p.estoque
       FROM carrinho c
       JOIN produtos p ON c.produto_id = p.id
       WHERE c.usuario_id = $1
@@ -62,20 +72,33 @@ router.get('/', autenticar, async (req, res) => {
 });
 
 // Atualizar quantidade de item
-router.put('/:id', autenticar, async (req, res) => {
+router.put('/:id', autenticar, validarAtualizarCarrinho, tratarErros, async (req, res) => {
   const userId = req.userId;
   const itemId = req.params.id;
   const { quantidade } = req.body;
 
   try {
+    // Buscar o item do carrinho e o produto associado para verificar o estoque
+    const itemCarrinho = await pool.query(
+      `SELECT c.produto_id, p.estoque FROM carrinho c JOIN produtos p ON c.produto_id = p.id WHERE c.id = $1 AND c.usuario_id = $2`,
+      [itemId, userId]
+    );
+
+    if (itemCarrinho.rowCount === 0) {
+      return res.status(404).json({ erro: 'Item não encontrado no carrinho' });
+    }
+
+    const { estoque } = itemCarrinho.rows[0];
+
+    // Se o produto tiver controle de estoque e a nova quantidade for maior que o estoque disponível
+    if (estoque !== null && quantidade > estoque) {
+      return res.status(400).json({ erro: `Quantidade excede o estoque disponível (${estoque}).` });
+    }
+
     const resultado = await pool.query(
       'UPDATE carrinho SET quantidade = $1 WHERE id = $2 AND usuario_id = $3',
       [quantidade, itemId, userId]
     );
-
-    if (resultado.rowCount === 0) {
-      return res.status(404).json({ erro: 'Item não encontrado no carrinho' });
-    }
 
     res.json({ mensagem: 'Quantidade atualizada' });
   } catch (error) {

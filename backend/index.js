@@ -6,10 +6,14 @@ const produtosRouter = require('./src/routes/produtos');
 const carrinhoRouter = require('./src/routes/carrinho');
 const pedidosRouter = require('./src/routes/pedidos');
 
+const limitarRequisicoes = require('./src/middleware/limitarRequisicoes');
+
 const autenticar = require('./src/middleware/auth'); // middleware que valida token e blacklist
 
 const app = express();
 app.use(express.json());
+
+app.use(limitarRequisicoes);
 
 // Rotas públicas
 app.use('/usuarios', usuariosRouter);
